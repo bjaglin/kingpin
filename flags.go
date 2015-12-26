@@ -3,7 +3,15 @@ package kingpin
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
+)
+
+var (
+	// Regexp used for splitting an environment variable value into a slice of default values
+	EnvVarValuesSeparator = "\r?\n"
+	envVarValuesTrimmer   = regexp.MustCompile(EnvVarValuesSeparator + "$")
+	envVarValuesSplitter  = regexp.MustCompile(EnvVarValuesSeparator)
 )
 
 type flagGroup struct {
@@ -182,8 +190,14 @@ func (f *FlagClause) setDefault() error {
 	}
 
 	if !f.noEnvar && f.envar != "" {
-		if v := os.Getenv(f.envar); v != "" {
-			return f.value.Set(v)
+		if values := os.Getenv(f.envar); values != "" {
+			trimmed := envVarValuesTrimmer.ReplaceAllString(values, "")
+			for _, value := range envVarValuesSplitter.Split(trimmed, -1) {
+				if err := f.value.Set(value); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 	}
 	return nil
@@ -227,8 +241,9 @@ func (f *FlagClause) OverrideDefaultFromEnvar(envar string) *FlagClause {
 	return f.Envar(envar)
 }
 
-// Envar overrides the default value for a flag from an environment variable,
-// if it is set.
+// Envar overrides the default value(s) for a flag from an environment variable,
+// if it is set. Several default values can be provided by using new lines to
+// separate them.
 func (f *FlagClause) Envar(name string) *FlagClause {
 	f.envar = name
 	f.noEnvar = false
